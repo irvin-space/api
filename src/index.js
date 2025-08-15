@@ -2,6 +2,11 @@
 const express = require("express");
 const sql = require("mssql");
 // const jwt = require("jsonwebtoken")
+const jwt = require('jsonwebtoken');
+
+const JWT_SECRET = 'your-super-secret-jwt-key-change-in-production';
+const JWT_EXPIRES_IN = '24h';
+
 const cors = require("cors");
 
 const app = express();
@@ -38,45 +43,337 @@ app.get("/", async (req, res) => {
     res.status(500).send("❌ DB connection failed: " + err.message);
   }
 });
+//Original login endpoin
+// app.post("/user/login", async (req, res) => {
+//   try {
+//     const { email, password } = req.body;
+//     console.log(email, password);
 
-app.post("/user/login", async (req, res) => {
+//     // if(email == 'usuarioPrueba' && password == '1234'){
+//     //   res.send("Usuario y contraseña correctos")
+//     // }else{
+//     //   res.status(401).send("Datos incorrectos")
+//     // }
+
+//     await sql.connect(sqlConfig);
+//     // Ejemplo: si parametro2 es el nombre del procedimiento y parametro1 es el valor
+//     const result = await sql.query(`valida_usuario ${email}`);
+//     res.json({ resultado: JSON.stringify(result) });
+//     // res.send(result)
+//     // console.log(result);
+//   } catch (err) {
+//     console.log("Error al intentar loggearse: ", err);
+//   }
+// });
+
+//Segundo enpoint funcionando tambien
+// app.post('/user/login', async (req, res) => {
+//   try {
+//     const { email } = req.body;
+
+//     if (!email) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Email is required'
+//       });
+//     }
+
+//     console.log('Login attempt with email:', email);
+
+//     // 🛰️ Connect to DB
+//     await sql.connect(sqlConfig);
+
+//     // 🧾 Call your stored procedure
+//     const result = await sql.query(`valida_usuario '${email}'`);
+
+//     // ❌ User not found
+//     if (!result.recordset || result.recordset.length === 0) {
+//       return res.status(401).json({
+//         success: false,
+//         message: 'User not found'
+//       });
+//     }
+
+//     const user = result.recordset[0];
+//     console.log('User from valida_usuario:', user);
+
+//     // ✅ User exists → generate JWT (no password check for now)
+//     const serviceToken = jwt.sign(
+//       {
+//         id: user.id_usuario,     // adjust field name as needed
+//         email: user.correo,      // adjust
+//         nombre: user.nombre,     // adjust
+//         rol: user.rol            // adjust or remove if not used
+//       },
+//       JWT_SECRET,
+//       { expiresIn: JWT_EXPIRES_IN }
+//     );
+
+//     // 📦 Prepare user object (Mantis-compatible format)
+//     const userProfile = {
+//       id: user.id_usuario,
+//       name: user.nombre,
+//       email: user.correo,
+//       role: user.rol || 'user'
+//       // Add more fields if your frontend uses them
+//     };
+
+//     // ✅ Send back what Mantis expects
+//     return res.json({
+//       serviceToken,  // ← must be exactly this key
+//       user: userProfile
+//     });
+
+//   } catch (err) {
+//     console.error('Error during login:', err);
+//     return res.status(500).json({
+//       success: false,
+//       message: 'Internal server error'
+//     });
+//   }
+// });
+
+
+
+
+//Endpoint final
+app.post('/user/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
-    console.log(email, password);
+    const { email: usuarioInput } = req.body; // usuario
 
-    // if(email == 'usuarioPrueba' && password == '1234'){
-    //   res.send("Usuario y contraseña correctos")
-    // }else{
-    //   res.status(401).send("Datos incorrectos")
-    // }
+    if (!usuarioInput) {
+      return res.status(400).json({
+        success: false,
+        message: 'Usuario is required'
+      });
+    }
 
+    console.log('Intento de usuario con:', usuarioInput);
+
+    //  Conectar a la BD
     await sql.connect(sqlConfig);
-    // Ejemplo: si parametro2 es el nombre del procedimiento y parametro1 es el valor
-    const result = await sql.query(`valida_usuario ${email}`);
-    res.json({ resultado: JSON.stringify(result) });
-    // res.send(result)
-    // console.log(result);
+
+    // LLamada al SP
+    const result = await sql.query(`valida_usuario '${usuarioInput}'`);
+
+    // Usuario no encontrado
+    if (!result.recordset || result.recordset.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const user = result.recordset[0];
+
+    // Opcional: revisar si usuario es valido
+    if (user.vigencia !== 'Válido') {
+      return res.status(401).json({
+        success: false,
+        message: 'User account is not active'
+      });
+    }
+
+
+    // Extraccion de datos para JWT en el front
+    const userId = user.usuario; 
+    const userEmail = user.usuario; 
+    const userName = user.nombre_persona; 
+    const userRole = 'user'; 
+
+
+
+
+
+
+
+
+    let menu = [];
+    if (result.recordsets[1] && result.recordsets[1][0]) {
+      const jsonString = Object.values(result.recordsets[1][0])[0]; // "{ \"Menu\": [...] }"
+      const parsed = JSON.parse(jsonString);
+      menu = parsed.Menu || [];
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // Generar JWT
+    const serviceToken = jwt.sign(
+      {
+        id: userId,
+        email: userEmail,
+        name: userName,
+        role: userRole
+      },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+
+    // Preparar objeto de usuario
+    const userProfile = {
+      id: userId,
+      name: userName,
+      email: userEmail,
+      role: userRole
+    };
+
+
+
+    // Devolver usuario + menu
+    return res.json({
+      serviceToken,
+      user: {
+        id: user.usuario,
+        name: user.nombre_persona,
+        email: user.usuario,
+        role: 'user'
+      },
+      menu 
+    });
+
   } catch (err) {
-    console.log("Error al intentar loggearse: ", err);
+    console.error('Error during login:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
   }
 });
+
+
+//Enpont para verificar si el usuario estaba registrado
+// app.post('/user/cuenta/yo', async (req, res) => {
+//   try {
+//     const authHeader = req.headers.authorization;
+//     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+//       return res.status(401).json({ message: 'No token provided' });
+//     }
+
+//     const token = authHeader.split(' ')[1];
+//     const decoded = jwt.verify(token, JWT_SECRET);
+
+//     // Fetch user again using decoded ID/email
+//     await sql.connect(sqlConfig);
+//     const result = await sql.query(`valida_usuario '${decoded.email}'`);
+
+//     if (result.recordset.length === 0) {
+//       return res.status(401).json({ message: 'User not found' });
+//     }
+
+//     const user = result.recordset[0];
+
+//     return res.json({
+//       user: {
+//         id: user.usuario,
+//         name: user.nombre_persona,
+//         email: user.usuario,
+//         role: 'user'
+//       }
+//     });
+//   } catch (err) {
+//     console.error('Error in /api/account/me:', err);
+//     return res.status(401).json({ message: 'Invalid token' });
+//   }
+// });
+
+
+
+app.post('/user/cuenta/yo', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    await sql.connect(sqlConfig);
+    const result = await sql.query(`valida_usuario '${decoded.email}'`);
+
+    if (result.recordset.length === 0) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    const user = result.recordset[0];
+
+    // Menu
+    let menu = [];
+    if (result.recordsets[1] && result.recordsets[1][0]) {
+      const jsonString = Object.values(result.recordsets[1][0])[0];
+      const parsed = JSON.parse(jsonString);
+      menu = parsed.Menu || [];
+    }
+
+    return res.json({
+      user: {
+        id: user.usuario,
+        name: user.nombre_persona,
+        email: user.usuario,
+        role: 'user'
+      },
+      menu // ✅ Return menu on refresh
+    });
+  } catch (err) {
+    console.error('Error in /user/cuenta/yo:', err);
+    return res.status(401).json({ message: 'Invalid token' });
+  }
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 //Componente lista dinamico
 app.post("/dinamico/lista", async (req, res) => {
   try {
     const { instruccionSQL, parametros } = req.body;
     console.log(instruccionSQL);
-    console.log(parametros);
+    console.log("a",parametros);
 
     // Validar instruccionSQL
-    const allowedInstructions = [
-      "combo_tasas_ivas",
-      "combo_sucursales",
-      "combo_formas_pago",
-    ];
-    if (!allowedInstructions.includes(instruccionSQL)) {
-      return res.status(400).json({ error: "Invalid SQL instruction" });
-    }
+    // const allowedInstructions = [
+    //   "combo_tasas_ivas",
+    //   "combo_sucursales",
+    //   "combo_formas_pago",
+    //   "Ser_Tramites_Aduanales"
+    // ];
+    // if (!allowedInstructions.includes(instruccionSQL)) {
+    //   return res.status(400).json({ error: "Invalid SQL instruction" });
+    // }
 
     // //Iterar sobre los parametros entrantes y crear un nuevo string
     // let instruccionSQLConParametros = ""
@@ -84,11 +381,22 @@ app.post("/dinamico/lista", async (req, res) => {
     // instruccionSQLConParametros = instruccionSQL
 
     // Build parameter string
+
     let stringParametros = "";
     for (let key in parametros) {
       const value = parametros[key];
       if (stringParametros.length > 0) stringParametros += ", ";
-      stringParametros += `${key}=${value}`;
+      console.log(typeof value)
+      console.log(value)
+      console.log(key)
+      console.log(typeof key)
+      if(key.startsWith("@")){
+        console.log("it starts with @")
+        stringParametros += `${key}=${value}`; // "@cCentro='      1'"
+      }else{
+        stringParametros += `${value}`
+      }
+
     }
 
     console.log("instruccionSQL", instruccionSQL);
@@ -97,14 +405,21 @@ app.post("/dinamico/lista", async (req, res) => {
 
     //Intentar conectarse a la BD
     await sql.connect(sqlConfig);
+// Ser_Tramites_Aduanales  '      1', '%', '2025-07-22', '2025-08-03', null
+// Ser_Tramites_Aduanales  '      1', '%', '2025-08-01', '2025-08-07', null
+
+
 
     // const result = await sql.query(`${instruccionSQL} "${parametro1}" `);
     // const result = await sql.query(`${instruccionSQL} "${parametros}" `);
     // const result = await sql.query(`combo_tasas_ivas @lOtros=0, @lSolo_Activas=0`);
-    // const result = await sql.query(`$instruccionSQL  @lOtros=0, @lSolo_Activas=0`);
-    const result = await sql.query(`${instruccionSQL}  ${stringParametros}`);
 
-    console.log(typeof result);
+    // const result = await sql.query(`Ser_Tramites_Aduanales '      1', '%', '2025-06-01', '2025-08-01', null`);
+ const result = await sql.query(`${instruccionSQL} ${stringParametros}`);
+
+  // combo_sucursales  @cCentro=      1
+  // combo_sucursales  @cCentro=      1
+  console.log(result);
 
     res.status(200).json(result.recordsets);
   } catch (error) {
@@ -167,7 +482,7 @@ app.post("/consulta", async (req, res) => {
 });
 
 app.post("/abcde", async (req, res) => {
-  const { nombre, codigo } = req.body; 
+  const { nombre, codigo } = req.body;
   if (!nombre || !codigo) {
     return res.status(400).json({ error: "Faltan campos requeridos" });
   }
@@ -180,6 +495,50 @@ app.post("/abcde", async (req, res) => {
     res
       .status(500)
       .json({ error: "Error al insertar en la base de datos: " + err.message });
+  }
+});
+
+
+
+
+
+
+
+
+
+app.post("/busqueda/tramites", async (req, res) => {
+  try {
+    const { instruccionSQL, parametros } = req.body;
+    console.log(instruccionSQL);
+    console.log(parametros); //
+
+
+    let stringParametros = "";
+    for (let key in parametros) {
+      const value = parametros[key];
+      if (stringParametros.length > 0) stringParametros += ", ";
+      stringParametros += `${key}=${value}`;
+    }
+
+    console.log("instruccionSQL", instruccionSQL);
+    console.log("stringParametros", stringParametros);
+    console.log(`${instruccionSQL}  ${stringParametros}`);
+
+    //Intentar conectarse a la BD
+    await sql.connect(sqlConfig);
+
+    // const result = await sql.query(`${instruccionSQL} "${parametro1}" `);
+    // const result = await sql.query(`${instruccionSQL} "${parametros}" `);
+    // const result = await sql.query(`combo_tasas_ivas @lOtros=0, @lSolo_Activas=0`);
+    // const result = await sql.query(`$instruccionSQL  @lOtros=0, @lSolo_Activas=0`);
+    const result = await sql.query(`${instruccionSQL}  ${stringParametros}`);
+
+    console.log(result);
+
+    res.status(200).json(result.recordsets);
+  } catch (error) {
+    console.error("Error al intentar obtener lista dinamica", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
