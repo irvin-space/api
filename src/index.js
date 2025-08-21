@@ -180,7 +180,8 @@ app.post('/user/login', async (req, res) => {
     const userEmail = user.usuario; 
     const userName = user.nombre_persona; 
     const userRole = 'user'; 
-
+    const sucursal = user.sucursal;
+    const sucursalName = user.nombre_sucursal;
 
 
 
@@ -214,7 +215,9 @@ app.post('/user/login', async (req, res) => {
         id: userId,
         email: userEmail,
         name: userName,
-        role: userRole
+        role: userRole,
+        sucursal: sucursal,
+        sucursalName: sucursalName
       },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES_IN }
@@ -225,7 +228,9 @@ app.post('/user/login', async (req, res) => {
       id: userId,
       name: userName,
       email: userEmail,
-      role: userRole
+      role: userRole,
+      sucursal: sucursal,
+      sucursalName: sucursalName 
     };
 
 
@@ -237,7 +242,9 @@ app.post('/user/login', async (req, res) => {
         id: user.usuario,
         name: user.nombre_persona,
         email: user.usuario,
-        role: 'user'
+        role: 'user',
+        sucursal: user.sucursal,
+        sucursalName: user.nombre_sucursal
       },
       menu 
     });
@@ -321,7 +328,9 @@ app.post('/user/cuenta/yo', async (req, res) => {
         id: user.usuario,
         name: user.nombre_persona,
         email: user.usuario,
-        role: 'user'
+        role: 'user',
+        sucursal: user.sucursal,
+        sucursalName: user.nombre_sucursal
       },
       menu // ✅ Return menu on refresh
     });
