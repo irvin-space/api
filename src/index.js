@@ -375,7 +375,7 @@ app.post("/dinamico/lista", async (req, res) => {
   try {
     const { instruccionSQL, parametros } = req.body;
     console.log(instruccionSQL);
-    console.log("a",parametros);
+    console.log("parametros recibidos",parametros);
 
     // Validar instruccionSQL
     // const allowedInstructions = [
@@ -383,6 +383,7 @@ app.post("/dinamico/lista", async (req, res) => {
     //   "combo_sucursales",
     //   "combo_formas_pago",
     //   "Ser_Tramites_Aduanales"
+    //   "Trae_Tramite_Aduanal"
     // ];
     // if (!allowedInstructions.includes(instruccionSQL)) {
     //   return res.status(400).json({ error: "Invalid SQL instruction" });
@@ -394,6 +395,22 @@ app.post("/dinamico/lista", async (req, res) => {
     // instruccionSQLConParametros = instruccionSQL
 
     // Build parameter string
+
+    if(instruccionSQL == "Trae_Tramite_Aduanal"){
+      let numberFolio = Number(parametros)
+      console.log("NUMBER FOLIO", numberFolio, typeof numberFolio)
+
+      //Intentar conectarse a la BD
+    await sql.connect(sqlConfig);
+
+      //Consulta con instruccionSQL y numbero de folio
+    const result = await sql.query(`${instruccionSQL} ${numberFolio}`);
+
+    console.log(result.recordsets)
+    //Respuesta enviada
+    res.status(200).json(result.recordsets);
+    return 
+    }
 
     let stringParametros = "";
     for (let key in parametros) {
