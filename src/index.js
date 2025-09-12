@@ -333,7 +333,8 @@ app.post('/user/cuenta/yo', async (req, res) => {
         email: user.usuario,
         role: 'user',
         sucursal: user.sucursal,
-        sucursalName: user.nombre_sucursal
+        sucursalName: user.nombre_sucursal,
+        id_persona: user.id_persona
       },
       menu // ✅ Return menu on refresh
     });
@@ -547,6 +548,45 @@ app.post("/busqueda/tramites", async (req, res) => {
 
     console.log(result);
 
+    res.status(200).json(result.recordsets);
+  } catch (error) {
+    console.error("Error al intentar obtener lista dinamica", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+
+app.post("/ejecuta", async (req, res) => {
+  try {
+    const { instruccionSQL, parametros } = req.body;
+    console.log(instruccionSQL);
+    console.log("a",parametros);
+
+    let stringParametros = "";
+    for (let key in parametros) {
+      const value = parametros[key];
+      if (stringParametros.length > 0) stringParametros += ", ";
+      console.log(typeof value)
+      console.log(value)
+      console.log(key)
+      console.log(typeof key)
+      if(key.startsWith("@")){
+        console.log("it starts with @")
+        stringParametros += `${key}=${value}`; 
+      }else{
+        stringParametros += `${value}`
+      }
+    }
+
+    console.log("instruccionSQL", instruccionSQL);
+    console.log("stringParametros", stringParametros);
+    console.log(`${instruccionSQL}  ${stringParametros}`);
+
+    //Intentar conectarse a la BD
+    await sql.connect(sqlConfig);
+
+    const result = await sql.query(`${instruccionSQL} ${stringParametros}`);
+    console.log(result);
     res.status(200).json(result.recordsets);
   } catch (error) {
     console.error("Error al intentar obtener lista dinamica", error);
