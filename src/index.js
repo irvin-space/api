@@ -395,7 +395,7 @@ app.post("/dinamico/lista", async (req, res) => {
 
     // Build parameter string
 
-    if(instruccionSQL == Trae_Tramite_Aduanal){
+    if(instruccionSQL == "Trae_Tramite_Aduanal"){
       let numberFolio = Number(parametros)
       console.log("NUMBER FOLIO", numberFolio, typeof numberFolio)
 
