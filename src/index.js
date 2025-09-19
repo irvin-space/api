@@ -1,3 +1,10 @@
+require('dotenv').config();
+const OpenAI = require('openai');
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
 //Leer variables en archivo .env
 const express = require("express");
 const sql = require("mssql");
@@ -16,6 +23,11 @@ const fs = require("fs");
 
 //SQL Server Config
 const sqlConfig = require("./config");
+// AI GOOGLE GEMINI
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+// Carga la clave de la API desde una variable de entorno
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // Asegúrate de tener esta variable en tu archivo .env
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 // Middleware para parsear JSON
 app.use(express.json());
@@ -184,30 +196,12 @@ app.post('/user/login', async (req, res) => {
     const sucursalName = user.nombre_sucursal;
     const id_persona = user.id_persona;
 
-
-
-
-
-
     let menu = [];
     if (result.recordsets[1] && result.recordsets[1][0]) {
       const jsonString = Object.values(result.recordsets[1][0])[0]; // "{ \"Menu\": [...] }"
       const parsed = JSON.parse(jsonString);
       menu = parsed.Menu || [];
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     // Generar JWT
     const serviceToken = jwt.sign(
@@ -343,32 +337,6 @@ app.post('/user/cuenta/yo', async (req, res) => {
     return res.status(401).json({ message: 'Invalid token' });
   }
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 //Componente lista dinamico
 app.post("/dinamico/lista", async (req, res) => {
@@ -529,13 +497,6 @@ app.post("/abcde", async (req, res) => {
 });
 
 
-
-
-
-
-
-
-
 app.post("/busqueda/tramites", async (req, res) => {
   try {
     const { instruccionSQL, parametros } = req.body;
@@ -611,7 +572,112 @@ app.post("/ejecuta", async (req, res) => {
   }
 });
 
+// Endpoint para análisis con IA GEMINI
+app.post("/analisis-ia", async (req, res) => {
+  try {
+    const { instruccionSQL, parametros, promptAI } = req.body;
+    console.log("Instrucción SQL:", instruccionSQL, "Parámetros:", parametros, "Prompt AI:", promptAI);
+    // Validación básica de los datos de entrada
+    if (!instruccionSQL || !promptAI) {
+      return res.status(400).json({ error: "Instrucción SQL y promptAI son requeridos." });
+    }
 
+    // Convertir parámetros a un string para la consulta SQL
+    let stringParametros = "";
+    for (let key in parametros) {
+      const value = parametros[key];
+      if (stringParametros.length > 0) stringParametros += ", ";
+      if (key.startsWith("@")) {
+        stringParametros += `${key}=${value}`;
+      } else {
+        stringParametros += `${value}`;
+      }
+    }
+    // 1. Ejecutar la consulta SQL para obtener los datos
+    await sql.connect(sqlConfig);
+    //const result = await sql.query(`${instruccionSQL} ${stringParametros} FOR JSON PATH, ROOT('datos_a_analizar')`);
+    const result = await sql.query(`${instruccionSQL} ${stringParametros} `);
+    
+    // 2. Parsear la cadena JSON que devuelve SQL Server
+    const jsonString = Object.values(result.recordsets[1][0])[0];
+    const datosParaGemini = JSON.parse(jsonString);
+
+    // 3. Preparar el prompt para Gemini con los datos
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+    const fullPrompt = `${promptAI}\n\nAquí están los datos en formato JSON para tu análisis: ${JSON.stringify(datosParaGemini, null, 2)}`;
+
+    // 4. Llamar a la API de Gemini para generar el análisis
+    const geminiResult = await model.generateContent(fullPrompt);
+    const geminiResponse = await geminiResult.response;
+    const analisisTexto = geminiResponse.text();
+
+    // 5. Enviar la respuesta analizada al cliente
+    res.status(200).json({
+      analisis: analisisTexto,
+      success: true
+    });
+
+  } catch (error) {
+    console.error("Error en el endpoint /analisis-ia:", error);
+    res.status(500).json({
+      error: "Error interno del servidor al procesar la solicitud.",
+      details: error.message
+    });
+  }
+});
+
+// Endpoint para análisis con IA CHATGPT
+app.post("/analisis-ia-gpt", async (req, res) => {
+  try {
+    const { instruccionSQL, parametros, promptAI } = req.body;
+
+    if (!instruccionSQL || !promptAI) {
+      return res.status(400).json({ error: "Instrucción SQL y promptAI son requeridos." });
+    }
+
+    // 1. Ejecutar la consulta SQL (usa la misma lógica de tu endpoint anterior)
+    let stringParametros = "";
+    for (let key in parametros) {
+      const value = parametros[key];
+      if (stringParametros.length > 0) stringParametros += ", ";
+      if (key.startsWith("@")) {
+        stringParametros += `${key}=${value}`;
+      } else {
+        stringParametros += `${value}`;
+      }
+    }
+
+    await sql.connect(sqlConfig);
+    const result = await sql.query(`${instruccionSQL} ${stringParametros}`);
+    //const datosParaGPT = result.recordset;
+    const datosParaGPT = result.recordsets[1][0];
+
+    // 2. Preparar el prompt para ChatGPT con los datos
+    const fullPrompt = `${promptAI}\n\nAquí están los datos en formato JSON para tu análisis: ${JSON.stringify(datosParaGPT, null, 2)}`;
+
+    // 3. Llamar a la API de ChatGPT para generar el análisis
+    const chatCompletion = await openai.chat.completions.create({
+      model: "gpt-4o-mini", // Puedes cambiar el modelo (ej: gpt-4, gpt-3.5-turbo)
+      messages: [{ role: "user", content: fullPrompt }],
+    });
+
+    // 4. Extraer el análisis de la respuesta
+    const analisisTexto = chatCompletion.choices[0].message.content;
+
+    // 5. Enviar la respuesta analizada al cliente
+    res.status(200).json({
+      analisis: analisisTexto,
+      success: true
+    });
+
+  } catch (error) {
+    console.error("Error en el endpoint /analisis-ia-gpt:", error);
+    res.status(500).json({
+      error: "Error interno del servidor al procesar la solicitud.",
+      details: error.message
+    });
+  }
+});
 
 
 //Servidor escuchando en el puerto 3001
