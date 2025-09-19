@@ -1,9 +1,9 @@
-// require('dotenv').config();
-// const OpenAI = require('openai');
+require('dotenv').config();
+const OpenAI = require('openai');
 
-// const openai = new OpenAI({
-//   apiKey: process.env.OPENAI_API_KEY,
-// });
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 //Leer variables en archivo .env
 const express = require("express");
@@ -23,11 +23,11 @@ const fs = require("fs");
 
 //SQL Server Config
 const sqlConfig = require("./config");
-// // AI GOOGLE GEMINI
-// const { GoogleGenerativeAI } = require("@google/generative-ai");
-// // Carga la clave de la API desde una variable de entorno
-// const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // Asegúrate de tener esta variable en tu archivo .env
-// const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+// AI GOOGLE GEMINI
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+// Carga la clave de la API desde una variable de entorno
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // Asegúrate de tener esta variable en tu archivo .env
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 // Middleware para parsear JSON
 app.use(express.json());
@@ -656,10 +656,10 @@ app.post("/analisis-ia-gpt", async (req, res) => {
     const fullPrompt = `${promptAI}\n\nAquí están los datos en formato JSON para tu análisis: ${JSON.stringify(datosParaGPT, null, 2)}`;
 
     // 3. Llamar a la API de ChatGPT para generar el análisis
-    // const chatCompletion = await openai.chat.completions.create({
-    //   model: "gpt-4o-mini", // Puedes cambiar el modelo (ej: gpt-4, gpt-3.5-turbo)
-    //   messages: [{ role: "user", content: fullPrompt }],
-    // });
+    const chatCompletion = await openai.chat.completions.create({
+      model: "gpt-4o-mini", // Puedes cambiar el modelo (ej: gpt-4, gpt-3.5-turbo)
+      messages: [{ role: "user", content: fullPrompt }],
+    });
 
     // 4. Extraer el análisis de la respuesta
     const analisisTexto = chatCompletion.choices[0].message.content;
