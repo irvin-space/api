@@ -656,10 +656,10 @@ app.post("/analisis-ia-gpt", async (req, res) => {
     const fullPrompt = `${promptAI}\n\nAquí están los datos en formato JSON para tu análisis: ${JSON.stringify(datosParaGPT, null, 2)}`;
 
     // 3. Llamar a la API de ChatGPT para generar el análisis
-    const chatCompletion = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // Puedes cambiar el modelo (ej: gpt-4, gpt-3.5-turbo)
-      messages: [{ role: "user", content: fullPrompt }],
-    });
+    // const chatCompletion = await openai.chat.completions.create({
+    //   model: "gpt-4o-mini", // Puedes cambiar el modelo (ej: gpt-4, gpt-3.5-turbo)
+    //   messages: [{ role: "user", content: fullPrompt }],
+    // });
 
     // 4. Extraer el análisis de la respuesta
     const analisisTexto = chatCompletion.choices[0].message.content;
