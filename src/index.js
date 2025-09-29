@@ -23,11 +23,17 @@ const fs = require("fs");
 
 //SQL Server Config
 const sqlConfig = require("./config");
+
 // AI GOOGLE GEMINI
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { GoogleGenAI } = require("@google/genai");
 // Carga la clave de la API desde una variable de entorno
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // Asegúrate de tener esta variable en tu archivo .env
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+// Inicializar el cliente
+const ai = new GoogleGenAI({ 
+    apiKey: process.env.GEMINI_API_KEY 
+});
+// La nueva librería detecta automáticamente el API Key si está en la variable de entorno GEMINI_API_KEY
+// En entornos Node.js, también puedes inicializarlo sin argumentos si la variable está definida:
+// const ai = new GoogleGenAI({}); 
 
 // Middleware para parsear JSON
 app.use(express.json());
@@ -150,7 +156,9 @@ app.get("/", async (req, res) => {
 
 //Endpoint final
 app.post('/user/login', async (req, res) => {
+  console.log("Login attempt received");
   try {
+    console.log(req.body)
     const { email: usuarioInput } = req.body; // usuario
 
     if (!usuarioInput) {
@@ -572,58 +580,77 @@ app.post("/ejecuta", async (req, res) => {
   }
 });
 
+// Asegúrate de que esta línea esté definida globalmente con el nuevo SDK:
+// import { GoogleGenAI } from "@google/genai";
+// const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+
 // Endpoint para análisis con IA GEMINI
 app.post("/analisis-ia", async (req, res) => {
-  try {
-    const { instruccionSQL, parametros, promptAI } = req.body;
-    console.log("Instrucción SQL:", instruccionSQL, "Parámetros:", parametros, "Prompt AI:", promptAI);
-    // Validación básica de los datos de entrada
-    if (!instruccionSQL || !promptAI) {
-      return res.status(400).json({ error: "Instrucción SQL y promptAI son requeridos." });
-    }
+ try {
+  const { instruccionSQL, parametros, promptAI } = req.body;
+  console.log("Instrucción SQL:", instruccionSQL, "Parámetros:", parametros, "Prompt AI:", promptAI);
+  // Validación básica de los datos de entrada
+  if (!instruccionSQL || !promptAI) {
+   return res.status(400).json({ error: "Instrucción SQL y promptAI son requeridos." });
+  }
 
-    // Convertir parámetros a un string para la consulta SQL
-    let stringParametros = "";
-    for (let key in parametros) {
-      const value = parametros[key];
-      if (stringParametros.length > 0) stringParametros += ", ";
+  // ... (Tu lógica de SQL se mantiene igual)
+  let stringParametros = "";
+  for (let key in parametros) {
+    const value = parametros[key];
+    if (stringParametros.length > 0) stringParametros += ", ";
       if (key.startsWith("@")) {
         stringParametros += `${key}=${value}`;
       } else {
         stringParametros += `${value}`;
       }
-    }
-    // 1. Ejecutar la consulta SQL para obtener los datos
-    await sql.connect(sqlConfig);
-    //const result = await sql.query(`${instruccionSQL} ${stringParametros} FOR JSON PATH, ROOT('datos_a_analizar')`);
-    const result = await sql.query(`${instruccionSQL} ${stringParametros} `);
-    
-    // 2. Parsear la cadena JSON que devuelve SQL Server
-    const jsonString = Object.values(result.recordsets[1][0])[0];
-    const datosParaGemini = JSON.parse(jsonString);
-
-    // 3. Preparar el prompt para Gemini con los datos
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
-    const fullPrompt = `${promptAI}\n\nAquí están los datos en formato JSON para tu análisis: ${JSON.stringify(datosParaGemini, null, 2)}`;
-
-    // 4. Llamar a la API de Gemini para generar el análisis
-    const geminiResult = await model.generateContent(fullPrompt);
-    const geminiResponse = await geminiResult.response;
-    const analisisTexto = geminiResponse.text();
-
-    // 5. Enviar la respuesta analizada al cliente
-    res.status(200).json({
-      analisis: analisisTexto,
-      success: true
-    });
-
-  } catch (error) {
-    console.error("Error en el endpoint /analisis-ia:", error);
-    res.status(500).json({
-      error: "Error interno del servidor al procesar la solicitud.",
-      details: error.message
-    });
   }
+  // 1. Ejecutar la consulta SQL para obtener los datos
+  await sql.connect(sqlConfig);
+  const result = await sql.query(`${instruccionSQL} ${stringParametros} `);
+  
+  // 2. Parsear la cadena JSON que devuelve SQL Server
+  const jsonString = Object.values(result.recordsets[1][0])[0];
+  const datosParaGemini = JSON.parse(jsonString);
+  // 3. Preparar el prompt para Gemini con los datos
+  // La línea comentada de getGenerativeModel era del SDK antiguo y no debe usarse.
+  //const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+  const fullPrompt = `${promptAI}\n\nAquí están los datos en formato JSON para tu análisis: ${JSON.stringify(datosParaGemini, null, 2)}`;
+  const MODEL_NAME = "gemini-2.5-flash"; // Excelente elección, es el modelo moderno o "gemini-2.5-pro" es mas caro y mas efectivo y lento
+   
+    // 4. Llamar a la API de Gemini para generar el análisis (¡Esta es la PRIMERA y ÚNICA llamada!)
+  const geminiResult = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: [
+        { 
+          role: "user", 
+          parts: [{ text: fullPrompt }] 
+        }
+     ]
+   });
+
+  // 5. Extraer el texto de la respuesta (usando .text del objeto de respuesta)
+    // ❌ LÍNEAS ANTERIORES QUE CAUSABAN EL ERROR:
+    // const geminiResult = await model.generateContent(fullPrompt);
+    // const geminiResponse = await geminiResult.response;
+    // const analisisTexto = geminiResponse.text();
+
+  const analisisTexto = geminiResult.text; // ✅ Corregido para el nuevo SDK
+
+  // 6. Enviar la respuesta analizada al cliente
+  res.status(200).json({
+    analisis: analisisTexto,
+    success: true
+  });
+
+ } catch (error) {
+  console.error("Error en el endpoint /analisis-ia:", error);
+  res.status(500).json({
+    error: "Error interno del servidor al procesar la solicitud.",
+    details: error.message
+  });
+ }
 });
 
 // Endpoint para análisis con IA CHATGPT
