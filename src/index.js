@@ -611,7 +611,7 @@ app.post("/analisis-ia", async (req, res) => {
   const result = await sql.query(`${instruccionSQL} ${stringParametros} `);
   
   // 2. Parsear la cadena JSON que devuelve SQL Server
-  const jsonString = Object.values(result.recordsets[1][0])[0];
+  const jsonString = Object.values(result.recordsets[2][0])[0];
   const datosParaGemini = JSON.parse(jsonString);
   // 3. Preparar el prompt para Gemini con los datos
   // La línea comentada de getGenerativeModel era del SDK antiguo y no debe usarse.
