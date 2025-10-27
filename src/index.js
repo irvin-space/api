@@ -13,6 +13,7 @@ const JWT_SECRET = 'your-super-secret-jwt-key-change-in-production';
 const JWT_EXPIRES_IN = '24h';
 // Asegúrate de que este archivo existe y la exportación es correcta:
 const sqlConfig = require("./config"); 
+const { Console } = require('console');
 const app = express();
 
 // --- Configuración de IA (OpenAI) ---
@@ -144,6 +145,108 @@ const documentExtractionSchema_SP = {
     // Definimos solo los campos más importantes como estrictamente necesarios para forzar una respuesta
     required: ["numero_factura", "uuid", "moneda", "total", "rfc_emisor", "productos"]
 };
+
+function getMimeTypeFromExtension(tipoArchivo, isText = false) {
+    if (isText) {
+        if (tipoArchivo && tipoArchivo.toLowerCase().includes('xml')) return 'application/xml';
+        if (tipoArchivo && tipoArchivo.toLowerCase().includes('json')) return 'application/json';
+        return 'text/plain';
+    }
+    if (tipoArchivo && tipoArchivo.toLowerCase().includes('pdf')) return 'application/pdf';
+    if (tipoArchivo && tipoArchivo.toLowerCase().includes('jpg')) return 'image/jpeg';
+    if (tipoArchivo && tipoArchivo.toLowerCase().includes('png')) return 'image/png';
+    return 'application/octet-stream';
+}
+
+// --- Endpoints de Documentos Binarios ---
+
+/**
+ * Endpoint para obtener archivos binarios (PDF, Imagen, etc.) desde SQL Server.
+ * * Recibe: 
+ * {
+ * "instruccionSQL": "[Nombre_SP_Que_Devuelve_PDF]",
+ * "parametros": { "nId": 123, "cCampoOtro": "'Valor'" }
+ * }
+ * * Devuelve:
+ * {
+ * "success": true,
+ * "fileData": "JVBERi0xLjQ...", // Cadena Base64 del archivo binario
+ * "mimeType": "application/pdf"  // Tipo MIME
+ * }
+ */
+// app.post("/documento/obtener", async (req, res) => {
+//     console.log("[ENDPOINT] /documento/obtener iniciado.");
+//     Console.log('Linea 167');
+    
+//     // Asumimos que los parámetros para el SP son:
+//     const { instruccionSQL, parametros, tipoArchivo } = req.body; 
+
+//     if (!instruccionSQL) {
+//         return res.status(400).json({ success: false, message: 'La instrucción SQL (SP) es requerida.' });
+//     }
+
+//     try {
+//         // 1. Usar tu función auxiliar para formatear los parámetros
+//         const stringParametros = formatSqlParams(parametros);
+//         const sqlQuery = `${instruccionSQL} ${stringParametros}`;
+        
+//         console.log(`[SQL QUERY DOCUMENTO] ${sqlQuery}`);
+        
+//         // 2. Conexión a la base de datos
+//         await sql.connect(sqlConfig);
+        
+//         // 3. Ejecutar la consulta
+//         // El SP debe devolver una columna con los datos binarios. 
+//         // Asumiremos que el campo se llama 'datos' o 'data'.
+//         const result = await sql.query(sqlQuery);
+        
+//         if (!result.recordset || result.recordset.length === 0) {
+//             return res.status(404).json({ success: false, message: 'Documento no encontrado en la base de datos.' });
+//         }
+        
+//         // 4. Extraer el dato binario. Buscamos la primera columna del primer registro.
+//         const firstRecord = result.recordset[0];
+//         // Buscamos una columna que típicamente contiene datos binarios (Buffer).
+//         const dataKey = Object.keys(firstRecord).find(key => 
+//              firstRecord[key] instanceof Buffer || typeof firstRecord[key] === 'string'
+//         );
+        
+//         const binaryData = dataKey ? firstRecord[dataKey] : null;
+
+//         if (!binaryData) {
+//             return res.status(404).json({ success: false, message: 'El procedimiento no devolvió un campo de datos binarios válido.' });
+//         }
+
+//         let fileData;
+//         let mimeType = 'application/octet-stream'; // Default (binario desconocido)
+
+//         if (binaryData instanceof Buffer) {
+//             // Caso 1: Datos binarios (PDF, Imagen, etc.)
+//             // Codificar el Buffer a Base64
+//             fileData = binaryData.toString('base64');
+//             // Determinar MIME Type basado en el parámetro del frontend
+//             mimeType = getMimeTypeFromExtension(tipoArchivo); 
+            
+//         } else if (typeof binaryData === 'string') {
+//             // Caso 2: Datos de texto (XML, TXT, JSON)
+//             fileData = binaryData;
+//             mimeType = getMimeTypeFromExtension(tipoArchivo, true); // Usa tipoArchivo para texto
+//         } else {
+//             return res.status(500).json({ success: false, message: 'Tipo de dato binario desconocido devuelto por el SP.' });
+//         }
+        
+//         // 5. Enviar respuesta con Base64 y MIME Type
+//         res.json({
+//             success: true,
+//             fileData: fileData,
+//             mimeType: mimeType
+//         });
+
+//     } catch (error) {
+//         console.error("Error al obtener documento binario:", error);
+//         res.status(500).json({ success: false, message: "Error interno del servidor al obtener el documento." });
+//     }
+// });
 
 // --- Función Auxiliar para Parámetros SQL (CORRECCIÓN FINAL AGRESIVA DE ESPACIOS Y COMILLAS EXTERNAS) ---
 function formatSqlParams(parametros) {
@@ -841,6 +944,143 @@ app.post("/analisis-ia-gpt", async (req, res) => {
     }
 });
 
+// --- Endpoints de Documentos Binarios ---
+
+/**
+ * Endpoint para obtener archivos binarios (PDF, Imagen, etc.) desde SQL Server.
+ * * Recibe: 
+ * {
+ * "instruccionSQL": "[Nombre_SP_Que_Devuelve_PDF]",
+ * "parametros": { "nId": 123, "cCampoOtro": "'Valor'" }
+ * }
+ * * Devuelve:
+ * {
+ * "success": true,
+ * "fileData": "JVBERi0xLjQ...", // Cadena Base64 del archivo binario
+ * "mimeType": "application/pdf"  // Tipo MIME
+ * }
+ */
+// --- Endpoint de Documentos Binarios (CON DEBUGGING) ---
+app.post("/documento/obtener", async (req, res) => {
+    console.log("------------------------------------------");
+    console.log("🟢 [ENDPOINT] /documento/obtener iniciado.");
+
+    // 1. ANÁLISIS DE ENTRADA
+    const { instruccionSQL, parametros, tipoArchivo } = req.body; 
+    console.log(`[DEBUG 1.1 - Entrada] instruccionSQL: ${instruccionSQL}`);
+    console.log(`[DEBUG 1.2 - Entrada] parametros: ${JSON.stringify(parametros)}`);
+    console.log(`[DEBUG 1.3 - Entrada] tipoArchivo (MIME Sugerido): ${tipoArchivo}`);
+
+    if (!instruccionSQL) {
+        console.error("❌ [ERROR 400] instruccionSQL no recibida.");
+        return res.status(400).json({ success: false, message: 'La instrucción SQL (SP) es requerida.' });
+    }
+
+    try {
+        // 2. PREPARACIÓN DE LA CONSULTA
+        const stringParametros = formatSqlParams(parametros);
+        const sqlQuery = `${instruccionSQL} ${stringParametros}`;
+        
+        console.log(`[DEBUG 2.1 - SQL Final] Consulta a Ejecutar: ${sqlQuery}`);
+        
+        // 3. CONEXIÓN Y EJECUCIÓN
+        console.log(`[DEBUG 3.1 - Conexión] Intentando conectar a la BD...`);
+        await sql.connect(sqlConfig);
+        console.log(`[DEBUG 3.2 - Conexión] ✅ Conexión exitosa.`);
+
+        const result = await sql.query(sqlQuery);
+        
+        // 4. ANÁLISIS DE RESULTADOS
+        console.log(`[DEBUG 4.1 - Resultado] Total de recordsets devueltos: ${result.recordsets.length}`);
+        
+        if (!result.recordset || result.recordset.length === 0) {
+             console.error("❌ [ERROR 404] El SP se ejecutó pero no devolvió registros.");
+            return res.status(404).json({ success: false, message: 'Documento no encontrado en la base de datos.' });
+        }
+        
+        // 5. EXTRACCIÓN DEL DATO BINARIO
+        const firstRecord = result.recordset[0];
+        console.log("[DEBUG 5.1 - Registro] Claves del primer registro:", Object.keys(firstRecord));
+
+        const dataKey = Object.keys(firstRecord).find(key => 
+             firstRecord[key] instanceof Buffer || typeof firstRecord[key] === 'string'
+        );
+        
+        console.log(`[DEBUG 5.2 - Key] Clave de columna con datos (dataKey) encontrada: ${dataKey}`);
+        
+        const binaryData = dataKey ? firstRecord[dataKey] : null;
+
+        if (!binaryData) {
+            console.error("❌ [ERROR 404] El campo de datos binarios es null o no se encontró una columna válida.");
+            return res.status(404).json({ success: false, message: 'El procedimiento no devolvió un campo de datos binarios válido.' });
+        }
+        
+        console.log(`[DEBUG 5.3 - Tipo Dato] binaryData es una instancia de Buffer: ${binaryData instanceof Buffer}`);
+        console.log(`[DEBUG 5.4 - Tipo Dato] typeof binaryData: ${typeof binaryData}`);
+
+
+        // 6. CODIFICACIÓN Y PREPARACIÓN DE RESPUESTA
+        let fileData;
+        let mimeType = 'application/octet-stream'; 
+
+        if (binaryData instanceof Buffer) {
+            fileData = Buffer.from(binaryData, 'binary').toString('base64'); // <- Esta doble conversión asegura la pureza
+            mimeType = getMimeTypeFromExtension(tipoArchivo);
+            console.log(`[DEBUG 6.1 - Buffer] Longitud Base64: ${fileData.length}`);
+            
+            
+        } else if (typeof binaryData === 'string') {
+            
+            // ⚠️ FIX CRÍTICO: LIMPIEZA DE CADENA BASE64
+            // 1. Eliminar espacios, saltos de línea y otros caracteres de formato que SQL podría incluir en un campo TEXT.
+            //    Esto asegura que solo quede la cadena Base64 pura.
+            const cleanedBase64 = binaryData.replace(/[\s\n\r\t]/g, '').trim();
+
+            fileData = cleanedBase64;
+            console.log(`[DEBUG 6.2.0 - Limpieza] Longitud después de limpieza: ${fileData.length}`);
+            
+            // --- APLICACIÓN DE FIX PARA PDF DEVUELTO COMO STRING ---
+            
+            // 1. Extraer la extensión solicitada de los parámetros para una verificación explícita
+            const rawExtensionParam = parametros['@cExtension'] || parametros['cExtension'] || '';
+            const requestedExtension = rawExtensionParam.replace(/'/g, '').toUpperCase();
+
+            // 2. Comprobación condicional: Si es un PDF, forzar el MIME Type.
+            if (requestedExtension === 'PDF' || tipoArchivo.toLowerCase().includes('pdf')) {
+                // Forzamos a application/pdf
+                mimeType = 'application/pdf';
+                console.log("[DEBUG 6.2.1 - PDF Fix] MIME Type forzado a application/pdf para el string Base64.");
+            } else {
+                mimeType = getMimeTypeFromExtension(tipoArchivo, true); 
+                console.log("[DEBUG 6.2.2 - Text Fallback] MIME Type asignado por la función auxiliar.");
+            }
+            // --------------------------------------------------------
+        } else {
+            console.error("❌ [ERROR 500] Tipo de dato binario desconocido.");
+            return res.status(500).json({ success: false, message: 'Tipo de dato binario desconocido devuelto por el SP.' });
+        }
+        
+        console.log(`[DEBUG 6.3 - MIME] MIME Type final: ${mimeType}`);
+
+        // 7. RESPUESTA EXITOSA
+        res.json({
+            success: true,
+            fileData: fileData,
+            mimeType: mimeType
+        });
+        console.log("✅ [ÉXITO] Documento enviado correctamente.");
+
+    } catch (error) {
+        // 8. MANEJO DE ERRORES CRÍTICOS
+        console.error("🔥 [ERROR CRÍTICO] Excepción capturada en /documento/obtener:", error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Error interno del servidor al obtener el documento. Revise el log del servidor para detalles.",
+            errorDetail: error.message // Útil para debug en el frontend
+        });
+    }
+    console.log("------------------------------------------");
+});
 
 // Servidor escuchando en el puerto 3001
 app.listen(PORT, () => {
