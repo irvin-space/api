@@ -9,6 +9,10 @@ const bodyParser = require('body-parser'); // <--- Asegúrate de tener bodyParse
 const fetch = require('node-fetch'); // <--- CRÍTICO: Asegúrate de tener instalado node-fetch
 const { Console } = require('console');
 
+// >>>>> LÍNEA FALTANTE QUE DEBES AÑADIR <<<<<
+const { GoogleGenAI } = require("@google/genai"); 
+// >>>>> FIN DE LÍNEA FALTANTE <<<<<
+
 // --- Configuración General ---
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = 'your-super-secret-jwt-key-change-in-production';
@@ -46,14 +50,47 @@ app.use(cors());
 
 
 // --- Configuración de IA (Google Gemini) ---
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+//const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+//let ai = null; // 1. Inicializa con 'null' o deja la declaración simple
+//let model = null; // 2. Inicializa 'model' con 'null' y usa 'let'
+const { GoogleGenerativeAI } = require("@google/generative-ai"); 
 
-if (!GEMINI_API_KEY) {
-    console.error("❌ ERROR CRÍTICO: La variable GEMINI_API_KEY no está definida en .env.");
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+let ai = null; 
+let model = null; 
+
+const baseModelConfig = {
+    model: 'gemini-2.5-flash', 
+    config: {
+        temperature: 0.2, 
+        maxOutputTokens: 2048, 
+    }
+};
+
+if (GEMINI_API_KEY) {
+    try {
+        // Inicializa la variable 'ai' aquí
+        
+        //ai = new GoogleGenerativeAI(GEMINI_API_KEY); 
+        ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+        console.log("✅ Cliente de Gemini inicializado correctamente.");
+        
+        // 🔑 FIX CRÍTICO: Inicializa 'model' aquí, solo si 'ai' es exitoso.
+        model = ai.getGenerativeModel(baseModelConfig); 
+       
+
+    } catch (error) {
+        console.error("❌ Error al crear la instancia de Gemini:", error.message);
+        ai = null; // Ya no es necesario, pero es buen patrón
+        model = null; // Asegura que 'model' también sea null
+    }
+} else {
+    console.error("⚠️ Advertencia: GEMINI_API_KEY no encontrada. La funcionalidad de IA estará deshabilitada.");
+    ai = null;
+    model = null; // Asegura que 'model' también sea null
 }
 
-// 🔑 CONFIGURACIÓN BASE DEL MODELO GEMINI 
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
+//const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
 const MAX_RETRIES = 3;
 
 // La instrucción principal para el modelo (define su personalidad y contexto ERP)
@@ -861,6 +898,242 @@ app.post('/analizar-documento-gemini', async (req, res) => {
             message: "Error interno en el servicio de IA. Verifique el formato de respuesta esperado." 
         });
     }
+});
+
+// --- Endpoint de Documentos Binarios (CON DEBUGGING) ---
+app.post("/documento/obtener", async (req, res) => {
+    console.log("------------------------------------------");
+    console.log("🟢 [ENDPOINT] /documento/obtener iniciado.");
+
+    // 1. ANÁLISIS DE ENTRADA
+    const { instruccionSQL, parametros, tipoArchivo } = req.body; 
+    console.log(`[DEBUG 1.1 - Entrada] instruccionSQL: ${instruccionSQL}`);
+    console.log(`[DEBUG 1.2 - Entrada] parametros: ${JSON.stringify(parametros)}`);
+    console.log(`[DEBUG 1.3 - Entrada] tipoArchivo (MIME Sugerido): ${tipoArchivo}`);
+
+    if (!instruccionSQL) {
+        console.error("❌ [ERROR 400] instruccionSQL no recibida.");
+        return res.status(400).json({ success: false, message: 'La instrucción SQL (SP) es requerida.' });
+    }
+
+    try {
+        // 2. PREPARACIÓN DE LA CONSULTA
+        const stringParametros = formatSqlParams(parametros);
+        const sqlQuery = `${instruccionSQL} ${stringParametros}`;
+        
+        console.log(`[DEBUG 2.1 - SQL Final] Consulta a Ejecutar: ${sqlQuery}`);
+        
+        // 3. CONEXIÓN Y EJECUCIÓN
+        console.log(`[DEBUG 3.1 - Conexión] Intentando conectar a la BD...`);
+        await sql.connect(sqlConfig);
+        console.log(`[DEBUG 3.2 - Conexión] ✅ Conexión exitosa.`);
+
+        const result = await sql.query(sqlQuery);
+        
+        // 4. ANÁLISIS DE RESULTADOS
+        console.log(`[DEBUG 4.1 - Resultado] Total de recordsets devueltos: ${result.recordsets.length}`);
+        
+        if (!result.recordset || result.recordset.length === 0) {
+             console.error("❌ [ERROR 404] El SP se ejecutó pero no devolvió registros.");
+            return res.status(404).json({ success: false, message: 'Documento no encontrado en la base de datos.' });
+        }
+        
+        // 5. EXTRACCIÓN DEL DATO BINARIO
+        const firstRecord = result.recordset[0];
+        console.log("[DEBUG 5.1 - Registro] Claves del primer registro:", Object.keys(firstRecord));
+
+        const dataKey = Object.keys(firstRecord).find(key => 
+             firstRecord[key] instanceof Buffer || typeof firstRecord[key] === 'string'
+        );
+        
+        console.log(`[DEBUG 5.2 - Key] Clave de columna con datos (dataKey) encontrada: ${dataKey}`);
+        
+        const binaryData = dataKey ? firstRecord[dataKey] : null;
+
+        if (!binaryData) {
+            console.error("❌ [ERROR 404] El campo de datos binarios es null o no se encontró una columna válida.");
+            return res.status(404).json({ success: false, message: 'El procedimiento no devolvió un campo de datos binarios válido.' });
+        }
+        
+        console.log(`[DEBUG 5.3 - Tipo Dato] binaryData es una instancia de Buffer: ${binaryData instanceof Buffer}`);
+        console.log(`[DEBUG 5.4 - Tipo Dato] typeof binaryData: ${typeof binaryData}`);
+
+
+        // 6. CODIFICACIÓN Y PREPARACIÓN DE RESPUESTA
+        let fileData;
+        let mimeType = 'application/octet-stream'; 
+
+        if (binaryData instanceof Buffer) {
+            fileData = Buffer.from(binaryData, 'binary').toString('base64'); // <- Esta doble conversión asegura la pureza
+            mimeType = getMimeTypeFromExtension(tipoArchivo);
+            console.log(`[DEBUG 6.1 - Buffer] Longitud Base64: ${fileData.length}`);
+            
+            
+        } else if (typeof binaryData === 'string') {
+            
+            // ⚠️ FIX CRÍTICO: LIMPIEZA DE CADENA BASE64
+            // 1. Eliminar espacios, saltos de línea y otros caracteres de formato que SQL podría incluir en un campo TEXT.
+            //    Esto asegura que solo quede la cadena Base64 pura.
+            const cleanedBase64 = binaryData.replace(/[\s\n\r\t]/g, '').trim();
+
+            fileData = cleanedBase64;
+            console.log(`[DEBUG 6.2.0 - Limpieza] Longitud después de limpieza: ${fileData.length}`);
+            
+            // --- APLICACIÓN DE FIX PARA PDF DEVUELTO COMO STRING ---
+            
+            // 1. Extraer la extensión solicitada de los parámetros para una verificación explícita
+            const rawExtensionParam = parametros['@cExtension'] || parametros['cExtension'] || '';
+            const requestedExtension = rawExtensionParam.replace(/'/g, '').toUpperCase();
+
+            // 2. Comprobación condicional: Si es un PDF, forzar el MIME Type.
+            if (requestedExtension === 'PDF' || tipoArchivo.toLowerCase().includes('pdf')) {
+                // Forzamos a application/pdf
+                mimeType = 'application/pdf';
+                console.log("[DEBUG 6.2.1 - PDF Fix] MIME Type forzado a application/pdf para el string Base64.");
+            } else {
+                mimeType = getMimeTypeFromExtension(tipoArchivo, true); 
+                console.log("[DEBUG 6.2.2 - Text Fallback] MIME Type asignado por la función auxiliar.");
+            }
+            // --------------------------------------------------------
+        } else {
+            console.error("❌ [ERROR 500] Tipo de dato binario desconocido.");
+            return res.status(500).json({ success: false, message: 'Tipo de dato binario desconocido devuelto por el SP.' });
+        }
+        
+        console.log(`[DEBUG 6.3 - MIME] MIME Type final: ${mimeType}`);
+
+        // 7. RESPUESTA EXITOSA
+        res.json({
+            success: true,
+            fileData: fileData,
+            mimeType: mimeType
+        });
+        console.log("✅ [ÉXITO] Documento enviado correctamente.");
+
+    } catch (error) {
+        // 8. MANEJO DE ERRORES CRÍTICOS
+        console.error("🔥 [ERROR CRÍTICO] Excepción capturada en /documento/obtener:", error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Error interno del servidor al obtener el documento. Revise el log del servidor para detalles.",
+            errorDetail: error.message // Útil para debug en el frontend
+        });
+    }
+    console.log("------------------------------------------");
+});
+
+// Endpoint para análisis de datos con IA GEMINI
+app.post("/analisis-ia", async (req, res) => {
+    console.log("[ENDPOINT] /analisis-ia iniciado.");
+    const model = ai.getGenerativeModel(baseModelConfig); // <-- Ya no fallará.
+    let conn; // Variable para almacenar la conexión SQL
+    
+    if (!ai) {
+        return res.status(500).json({ success: false, message: "API de Gemini no inicializada. Verifique GEMINI_API_KEY." });
+    }
+
+    try {
+        const { instruccionSQL, parametros, promptAI } = req.body;
+        
+        if (!instruccionSQL || !promptAI) {
+            return res.status(400).json({ error: "Instrucción SQL y promptAI son requeridos." });
+        }
+
+        // 1. Ejecutar la consulta SQL para obtener los datos
+        const stringParametros = formatSqlParams(parametros);
+        const sqlQuery = `${instruccionSQL} ${stringParametros} `;
+        console.log(`[SQL QUERY] ${sqlQuery}`);
+        
+        // Conectar a la BD
+        conn = await sql.connect(sqlConfig); // Conexión asignada a 'conn'
+        const result = await sql.query(sqlQuery);
+        
+        // === ZONA CRÍTICA: Extracción y Parseo de JSON ===
+        
+        if (!result.recordsets || result.recordsets.length < 3 || result.recordsets[2].length === 0) {
+            console.error("❌ ERROR SQL: Estructura de recordsets inesperada o tercer recordset vacío.");
+            throw new Error("Estructura de la respuesta SQL no válida para la extracción de JSON.");
+        }
+        
+        let jsonString, datosParaGemini;
+        
+        try {
+            // Intento de extracción
+            jsonString = Object.values(result.recordsets[2][0])[0];
+            datosParaGemini = JSON.parse(jsonString);
+            
+        } catch (e) {
+            console.error("❌ ERROR JSON: Fallo al parsear o extraer el JSON.", e.message);
+            // Mostrar la cadena que intentó parsear para depuración
+            console.error("JSON String problemático (primeros 200 chars):", String(jsonString).substring(0, 200));
+            throw new Error(`Datos SQL no son JSON válido. Detalle: ${e.message}`);
+        }
+        
+        // ... (Pasos 2 al 6: Preparar prompt, llamar a Gemini, extraer respuesta, enviar)
+        // El resto del código de la llamada a Gemini es correcto.
+        
+        // Envío final de respuesta
+        res.status(200).json({ analisis: analisisTexto, success: true });
+
+
+    } catch (error) {
+        // ERROR HANDLER: Captura y envía el error detallado
+        console.error("❌ Error en el endpoint /analisis-ia:", error);
+        res.status(500).json({
+            error: "Error interno del servidor al procesar la solicitud.",
+            details: error.message // <-- **Esto es lo que el front debe capturar ahora.**
+        });
+    } finally {
+        // Asegura que la conexión SQL se cierre, si existe.
+        if (conn) { 
+            sql.close();
+            console.log("[SQL] Conexión cerrada.");
+        }
+    }
+});
+
+// Endpoint para análisis con IA CHATGPT (Se mantiene igual)
+app.post("/analisis-ia-gpt", async (req, res) => {
+    try {
+        const { instruccionSQL, parametros, promptAI } = req.body;
+        // ... (Lógica de SQL y OpenAI se mantiene)
+        if (!instruccionSQL || !promptAI) {
+            return res.status(400).json({ error: "Instrucción SQL y promptAI son requeridos." });
+        }
+
+        // Ejecución de SQL con la función auxiliar
+        const stringParametros = formatSqlParams(parametros);
+        const sqlQuery = `${instruccionSQL} ${stringParametros}`;
+        console.log(`[SQL QUERY] ${sqlQuery}`); // Log de depuración
+
+        await sql.connect(sqlConfig);
+        const result = await sql.query(sqlQuery);
+        
+        // Aquí debes asegurarte de qué recordset contiene los datos para GPT
+        // Asumo recordsets[1][0] como en tu código previo para GPT
+        const datosParaGPT = result.recordsets[1][0];
+
+        const fullPrompt = `${promptAI}\n\nAquí están los datos en formato JSON para tu análisis: ${JSON.stringify(datosParaGPT, null, 2)}`;
+
+        const chatCompletion = await openai.chat.completions.create({
+            model: "gpt-4o-mini", 
+            messages: [{ role: "user", content: fullPrompt }],
+        });
+
+        const analisisTexto = chatCompletion.choices[0].message.content;
+
+        res.status(200).json({
+            analisis: analisisTexto,
+            success: true
+        });
+
+    } catch (error) {
+        console.error("Error en el endpoint /analisis-ia-gpt:", error);
+        res.status(500).json({
+            error: "Error interno del servidor al procesar la solicitud.",
+            details: error.message
+        });
+    }
 });
 
 
