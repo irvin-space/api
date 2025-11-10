@@ -13,6 +13,13 @@ const { Console } = require('console');
 const { GoogleGenAI } = require("@google/genai"); 
 // >>>>> FIN DE LÍNEA FALTANTE <<<<<
 
+// --- CONFIGURACIÓN DE LA API DE GEMINI AGREGADA ---
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // **IMPORTANTE: Debes tener esta variable en tu archivo .env**
+const GEMINI_MODEL = "gemini-2.5-flash"; // Ajusta el modelo si usas otro
+const MAX_RETRIES = 3; // Límite de reintentos
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+// --------------------------------------------------
+
 // --- Configuración General ---
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = 'your-super-secret-jwt-key-change-in-production';
@@ -55,7 +62,7 @@ app.use(cors());
 //let model = null; // 2. Inicializa 'model' con 'null' y usa 'let'
 const { GoogleGenerativeAI } = require("@google/generative-ai"); 
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+//const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 let ai = null; 
 let model = null; 
 
@@ -91,7 +98,7 @@ if (GEMINI_API_KEY) {
 }
 
 //const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
-const MAX_RETRIES = 3;
+//const MAX_RETRIES = 3;
 
 // La instrucción principal para el modelo (define su personalidad y contexto ERP)
 const SYSTEM_INSTRUCTION_TEXT = `
