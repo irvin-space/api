@@ -79,7 +79,7 @@ if (GEMINI_API_KEY) {
         // Inicializa la variable 'ai' aquí
         
         //ai = new GoogleGenerativeAI(GEMINI_API_KEY); 
-        ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+        ai = new GoogleGenerativeAI(GEMINI_API_KEY );
         console.log("✅ Cliente de Gemini inicializado correctamente.");
         
         // 🔑 FIX CRÍTICO: Inicializa 'model' aquí, solo si 'ai' es exitoso.
@@ -1032,8 +1032,6 @@ app.post("/documento/obtener", async (req, res) => {
 // Endpoint para análisis de datos con IA GEMINI
 app.post("/analisis-ia", async (req, res) => {
     console.log("[ENDPOINT] /analisis-ia iniciado.");
-    const model = ai.getGenerativeModel(baseModelConfig); // <-- Ya no fallará.
-    let conn; // Variable para almacenar la conexión SQL
     
     if (!ai) {
         return res.status(500).json({ success: false, message: "API de Gemini no inicializada. Verifique GEMINI_API_KEY." });
@@ -1049,53 +1047,66 @@ app.post("/analisis-ia", async (req, res) => {
         // 1. Ejecutar la consulta SQL para obtener los datos
         const stringParametros = formatSqlParams(parametros);
         const sqlQuery = `${instruccionSQL} ${stringParametros} `;
-        console.log(`[SQL QUERY] ${sqlQuery}`);
-        
-        // Conectar a la BD
-        conn = await sql.connect(sqlConfig); // Conexión asignada a 'conn'
+        console.log(`[SQL QUERY] ${sqlQuery}`); // Log de depuración
+
+        await sql.connect(sqlConfig);
         const result = await sql.query(sqlQuery);
         
-        // === ZONA CRÍTICA: Extracción y Parseo de JSON ===
+        // Asumo que el JSON está en el tercer recordset (recordsets[2][0])
+        const jsonString = Object.values(result.recordsets[2][0])[0];
+        const datosParaGemini = JSON.parse(jsonString);
         
-        if (!result.recordsets || result.recordsets.length < 3 || result.recordsets[2].length === 0) {
-            console.error("❌ ERROR SQL: Estructura de recordsets inesperada o tercer recordset vacío.");
-            throw new Error("Estructura de la respuesta SQL no válida para la extracción de JSON.");
-        }
+        // 2. Preparar el prompt
+        const fullPrompt = `${promptAI}\n\nAquí están los datos en formato JSON para tu análisis: ${JSON.stringify(datosParaGemini, null, 2)}`;
         
-        let jsonString, datosParaGemini;
-        
-        try {
-            // Intento de extracción
-            jsonString = Object.values(result.recordsets[2][0])[0];
-            datosParaGemini = JSON.parse(jsonString);
-            
-        } catch (e) {
-            console.error("❌ ERROR JSON: Fallo al parsear o extraer el JSON.", e.message);
-            // Mostrar la cadena que intentó parsear para depuración
-            console.error("JSON String problemático (primeros 200 chars):", String(jsonString).substring(0, 200));
-            throw new Error(`Datos SQL no son JSON válido. Detalle: ${e.message}`);
-        }
-        
-        // ... (Pasos 2 al 6: Preparar prompt, llamar a Gemini, extraer respuesta, enviar)
-        // El resto del código de la llamada a Gemini es correcto.
-        
-        // Envío final de respuesta
-        res.status(200).json({ analisis: analisisTexto, success: true });
+        // 3. Obtener la referencia al modelo 
+        const model = ai.getGenerativeModel(baseModelConfig); 
 
+        // 4. Llamar a la API de Gemini 
+        const contents = [
+            { 
+                role: "user", 
+                parts: [{ text: fullPrompt }] 
+            }
+        ];
+        const geminiResponse = await model.generateContent({ contents }); 
+
+        // 5. Extraer el texto de la respuesta (LÓGICA ULTRA-ROBUSTA)
+        let analisisTexto = geminiResponse.text; // Intento 1: Propiedad .text del SDK (Método preferido)
+
+        if (!analisisTexto) {
+            // Intento 2: Extracción manual, usando la estructura anidada "response" que aparece en el debug log
+            analisisTexto = geminiResponse?.response?.candidates?.[0]?.content?.parts?.[0]?.text;
+        }
+
+        if (!analisisTexto) {
+            // Intento 3: Extracción manual, usando la estructura estándar del SDK sin el wrapper "response"
+            analisisTexto = geminiResponse?.candidates?.[0]?.content?.parts?.[0]?.text;
+        }
+        
+        analisisTexto = analisisTexto?.trim() || null; // Limpieza final
+
+        if (!analisisTexto) {
+            // Si sigue siendo nulo, es un error real o un bloqueo.
+            analisisTexto = "No se pudo obtener el análisis. Error: El contenido de la IA fue bloqueado o está vacío.";
+            console.error("❌ ERROR CRÍTICO: Respuesta de Gemini vacía o bloqueada.");
+            console.error("RESPUESTA COMPLETA DE GEMINI (DEBUG):", JSON.stringify(geminiResponse, null, 2));
+        }
+
+        console.log("RESPUESTA GEMINI (Extracción exitosa):", analisisTexto.substring(0, 100) + "..."); 
+
+        // 6. Enviar la respuesta analizada al cliente
+        res.status(200).json({
+            analisis: analisisTexto,
+            success: true
+        });
 
     } catch (error) {
-        // ERROR HANDLER: Captura y envía el error detallado
-        console.error("❌ Error en el endpoint /analisis-ia:", error);
+        console.error("Error en el endpoint /analisis-ia:", error);
         res.status(500).json({
             error: "Error interno del servidor al procesar la solicitud.",
-            details: error.message // <-- **Esto es lo que el front debe capturar ahora.**
+            details: error.message
         });
-    } finally {
-        // Asegura que la conexión SQL se cierre, si existe.
-        if (conn) { 
-            sql.close();
-            console.log("[SQL] Conexión cerrada.");
-        }
     }
 });
 
