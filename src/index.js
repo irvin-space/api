@@ -8,6 +8,8 @@ const fs = require("fs");
 const bodyParser = require('body-parser'); // <--- Asegúrate de tener bodyParser
 const fetch = require('node-fetch'); // <--- CRÍTICO: Asegúrate de tener instalado node-fetch
 const { Console } = require('console');
+const bcrypt = require('bcryptjs') // Dependencia para encriptar contraseña
+const salt = bcrypt.genSaltSync(10); //Rondas que utilizamos para encriptar
 
 // >>>>> LÍNEA FALTANTE QUE DEBES AÑADIR <<<<<
 const { GoogleGenAI } = require("@google/genai"); 
@@ -35,7 +37,6 @@ app.use(cors({ origin: 'http://localhost:3000' })); // Reemplaza con el puerto d
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
-app.use(cors());
 
 ///
 // // Configuración de Middlewares (Ajustar límite de tamaño del cuerpo de la solicitud)
@@ -516,11 +517,39 @@ app.get("/", async (req, res) => {
     }
 });
 
+//Enpoint de registro
+// app.post('/user/registro',async (req,res)=>{
+//     res.send("Endpoint")
+// })
+
+//Enpoint de actualizar password hasheada
+app.post('/user/actualiza-password',async (req,res)=>{
+    // console.log("recibiendo en actualizar password",req.body)
+    try{
+        const {usuario,nuevaPassword} = req.body
+        // console.log("actualizar",usuario)
+        // console.log("actualizar",nuevaPassword)
+
+        await sql.connect(sqlConfig);
+
+        const hash = bcrypt.hashSync(nuevaPassword, salt); // Contraseña del usuario se hashea aqui con el numero de rondas de sal que definimos
+        
+
+        const result = await sql.query(`UPDATE Personal_Passwords SET password = '${hash}' WHERE usuario = '${usuario}'`)
+
+        // console.log(result)
+        res.send("exito en recibir usuario y nuevaContraseña")
+    }catch(error){
+        console.log(error)
+        return res.status(500).json({ success: false, message: 'No se pudo actualizar la contraseña para el usuario' });
+    }
+})
+
 // Endpoint de login
 app.post('/user/login', async (req, res) => {
     console.log("Login attempt received");
     try {
-        const { email: usuarioInput } = req.body; 
+        const { email: usuarioInput, password: usuarioInputPassword } = req.body; 
 
         if (!usuarioInput) {
             return res.status(400).json({ success: false, message: 'Usuario is required' });
@@ -528,15 +557,24 @@ app.post('/user/login', async (req, res) => {
 
         await sql.connect(sqlConfig);
         const result = await sql.query(`valida_usuario '${usuarioInput}'`); // Parámetro de string entre comillas
+        // console.log("result debajo")
+        // console.log(result)
 
         if (!result.recordset || result.recordset.length === 0 || result.recordset[0].vigencia !== 'Válido') {
             return res.status(401).json({ success: false, message: 'User not found or not active' });
         }
+
         // ... (resto de la lógica de login)
         const user = result.recordset[0];
+
+        //Compara contraseña en base de 
+        if(!bcrypt.compareSync(usuarioInputPassword, user.password)){
+            return res.status(401).json({message:"Contraseña no válida"})
+        }
+
         let menu = [];
         if (result.recordsets[1] && result.recordsets[1][0]) {
-            const jsonString = Object.values(result.recordsets[1][0])[0]; 
+            const jsonString = Object.values(result.recordsets[1][0])[0];
             const parsed = JSON.parse(jsonString);
             menu = parsed.Menu || [];
         }
@@ -765,7 +803,7 @@ app.post("/ejecuta", async (req, res) => {
       console.log(typeof key)
       if(key.startsWith("@")){
         console.log("it starts with @")
-        stringParametros += `${key}=${value}`; 
+        stringParametros += `${key}='${value}'`;
       }else{
         stringParametros += `${value}`
       }
