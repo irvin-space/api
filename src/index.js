@@ -803,7 +803,7 @@ app.post("/ejecuta", async (req, res) => {
       console.log(typeof key)
       if(key.startsWith("@")){
         console.log("it starts with @")
-        stringParametros += `${key}='${value}'`;
+        stringParametros += `${key}=${value}`; 
       }else{
         stringParametros += `${value}`
       }
