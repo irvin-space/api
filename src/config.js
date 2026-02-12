@@ -30,6 +30,7 @@ const sqlConfigString = {
     encrypt : true, //for azure
     trustServerCertificate : true // change to false if you have a valid certificate
   },
+  requestTimeout: 480000, // 4 minutes in milliseconds
 }
 
 module.exports = sqlConfigString
